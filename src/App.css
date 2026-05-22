@@ -1,0 +1,277 @@
+.app-loading {
+  height: 100svh;
+  background: var(--bg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100svh;
+  overflow: hidden;
+}
+
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+
+  &:hover { background: var(--surface-2); }
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Wide layout (side-by-side) ───────────────────────────────────────────── */
+
+.app-body__calendar {
+  flex: 1;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+
+.app-body__chat {
+  width: 380px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* ── Narrow layout (toggle) ───────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  .toggle-btn { display: flex; }
+
+  .app-body__calendar {
+    display: none;
+    flex: 1;
+    border-right: none;
+  }
+
+  .app-body__calendar--active {
+    display: block;
+  }
+
+  .app-body__chat {
+    display: none;
+    width: 100%;
+  }
+
+  .app-body__chat--active {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-logo {
+  height: 22px;
+  width: 22px;
+  object-fit: contain;
+}
+
+.app-logo--lg {
+  height: 64px;
+  width: 64px;
+  margin-bottom: 4px;
+}
+
+
+.app-header__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-menu {
+  position: relative;
+}
+
+.settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+
+  &:hover { background: var(--surface-2); }
+}
+
+.settings-menu__dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 280px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 100;
+}
+
+.settings-menu__heading {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-menu__row {
+  display: flex;
+  gap: 6px;
+}
+
+.settings-menu__input {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-family: var(--mono);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text);
+  outline: none;
+
+  &:focus { border-color: var(--text-2); }
+}
+
+.settings-menu__toggle {
+  padding: 7px 10px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-2);
+  white-space: nowrap;
+
+  &:hover { background: var(--surface-2); }
+}
+
+.settings-menu__studio-link {
+  font-size: 11px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-align: center;
+}
+
+.settings-menu__footer {
+  font-size: 11px;
+  color: var(--text-2);
+  text-align: center;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+
+  a {
+    color: var(--text-2);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+.settings-menu__save {
+  padding: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  border-radius: 5px;
+  background: var(--text);
+  color: var(--bg);
+  transition: opacity 0.15s;
+
+  &:disabled { opacity: 0.35; cursor: not-allowed; }
+  &:not(:disabled):hover { opacity: 0.85; }
+}
+
+.signout-btn {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover { background: var(--surface-2); }
+}
+
+/* ── Sign-in screen ───────────────────────────────────────────────────────── */
+
+.signin-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100svh;
+  gap: 12px;
+
+  h1 { font-size: 1.6rem; }
+
+  p {
+    color: var(--text-2);
+    font-size: 14px;
+  }
+}
+
+.signin-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  margin-top: 8px;
+  transition: box-shadow 0.2s;
+
+  &:hover { box-shadow: var(--shadow); }
+}
