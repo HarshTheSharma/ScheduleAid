@@ -211,4 +211,4 @@ src/
 
 ## License
 
-© 2026 [HarshSharma.dev](https://HarshSharma.dev). All rights reserved.
+© 2026 [HarshSharma.dev](https://HarshSharma.dev). All rights reserved. Credit for use.
