@@ -30,6 +30,9 @@ function SignInScreen() {
         </svg>
         Sign in with Google
       </button>
+      <p className="signin-legal">
+        By signing in you agree to our <a href="/terms.html" target="_blank" rel="noreferrer">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy Policy</a>.
+      </p>
     </div>
   )
 }
