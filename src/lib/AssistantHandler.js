@@ -68,6 +68,18 @@ Your reply to the user should only ever be the final outcome. Never include your
 
 ## Recurring events
 When an event has a recurringEventId field, it is one instance of a repeating series.
+
+Creating recurring events: use the recurrence parameter with a valid RRULE string.
+Common patterns:
+- Daily: RRULE:FREQ=DAILY
+- Weekly on specific days: RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR
+- Every two weeks: RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO
+- Monthly on a date: RRULE:FREQ=MONTHLY;BYMONTHDAY=15
+- N times total: append ;COUNT=N (e.g. RRULE:FREQ=DAILY;COUNT=5)
+- Until a date: append ;UNTIL=YYYYMMDD (e.g. RRULE:FREQ=WEEKLY;UNTIL=20261231)
+
+Modifying a recurring series: use modify_event with the recurringEventId (not the instance ID) to change the whole series. Use delete_event scope to remove occurrences.
+
 Before deleting, always clarify scope unless the user made it unambiguous:
 - "delete just today's standup" → scope='this'
 - "delete this and all future standups" → scope='following'
@@ -154,6 +166,7 @@ const TOOLS = [{
           start:       { type: 'STRING', description: 'ISO 8601 start datetime' },
           end:         { type: 'STRING', description: 'ISO 8601 end datetime' },
           description: { type: 'STRING', description: 'Optional user-visible description' },
+          recurrence:  { type: 'STRING', description: 'RRULE string for repeating events, e.g. "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR" or "RRULE:FREQ=DAILY;COUNT=5". Omit for one-off events.' },
           priority:      { type: 'NUMBER', description: '1 (urgent) to 5 (low). Ask the user if unsure.' },
           flexibility:   { type: 'NUMBER', description: '0 = fixed, 1 = can be moved. Ask the user if unsure.' },
           dueDate:       { type: 'STRING', description: 'Hard deadline date (YYYY-MM-DD), if any' },
@@ -165,15 +178,16 @@ const TOOLS = [{
     },
     {
       name: 'modify_event',
-      description: 'Update an existing event, including rescheduling (moving) it to a new time. Only provide the fields that should change; others are preserved. Always use this to move an event, never create+delete.',
+      description: 'Update an existing event, including rescheduling (moving) it to a new time. Only provide the fields that should change; others are preserved. Always use this to move an event, never create+delete. To modify a recurring series, use the recurringEventId as the eventId.',
       parameters: {
         type: 'OBJECT',
         properties: {
-          eventId:     { type: 'STRING', description: 'The event ID to modify' },
+          eventId:     { type: 'STRING', description: 'The event ID to modify. For recurring series changes, use the recurringEventId.' },
           title:       { type: 'STRING', description: 'New title' },
           start:       { type: 'STRING', description: 'New ISO 8601 start datetime' },
           end:         { type: 'STRING', description: 'New ISO 8601 end datetime' },
           description: { type: 'STRING', description: 'New description text' },
+          recurrence:  { type: 'STRING', description: 'New RRULE string to change the recurrence pattern, e.g. "RRULE:FREQ=WEEKLY;BYDAY=MO". Pass empty string to remove recurrence.' },
           priority:      { type: 'NUMBER', description: 'New priority (1–5)' },
           flexibility:   { type: 'NUMBER', description: 'New flexibility (0 or 1)' },
           dueDate:       { type: 'STRING', description: 'New due date (YYYY-MM-DD)' },
@@ -245,6 +259,7 @@ async function executeTool(name, args, accessToken) {
         start: args.start,
         end: args.end,
         description: args.description ?? '',
+        ...(args.recurrence !== undefined && { recurrence: args.recurrence }),
         metadata: {
           ...(args.priority      !== undefined && { priority: args.priority }),
           ...(args.flexibility   !== undefined && { flexibility: args.flexibility }),
@@ -262,6 +277,7 @@ async function executeTool(name, args, accessToken) {
         ...(args.start       !== undefined && { start: args.start }),
         ...(args.end         !== undefined && { end: args.end }),
         ...(args.description !== undefined && { description: args.description }),
+        ...(args.recurrence  !== undefined && { recurrence: args.recurrence }),
         ...(hasMetadata && {
           metadata: Object.fromEntries(
             metadataKeys.filter(k => args[k] !== undefined).map(k => [k, args[k]])

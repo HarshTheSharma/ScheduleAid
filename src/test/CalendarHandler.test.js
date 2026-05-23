@@ -620,3 +620,132 @@ describe('deleteEvent: recurring', () => {
     expect(event.recurringEventId).toBeUndefined()
   })
 })
+
+// ── createEvent: recurrence ───────────────────────────────────────────────────
+
+describe('createEvent: recurrence', () => {
+  it('sends recurrence as a single-element array when provided', async () => {
+    const calls = captureFetch([makeRawEvent()])
+    await createEvent(TOKEN, {
+      title: 'Standup',
+      start: '2026-05-25T10:00:00Z',
+      end:   '2026-05-25T10:15:00Z',
+      recurrence: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+    })
+    expect(calls[0].body.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'])
+  })
+
+  it('omits the recurrence field entirely when not provided', async () => {
+    const calls = captureFetch([makeRawEvent()])
+    await createEvent(TOKEN, {
+      title: 'One-off',
+      start: '2026-05-25T10:00:00Z',
+      end:   '2026-05-25T11:00:00Z',
+    })
+    expect(calls[0].body.recurrence).toBeUndefined()
+  })
+
+  it('supports COUNT-based recurrence', async () => {
+    const calls = captureFetch([makeRawEvent()])
+    await createEvent(TOKEN, {
+      title: 'Sprint retro',
+      start: '2026-05-25T14:00:00Z',
+      end:   '2026-05-25T15:00:00Z',
+      recurrence: 'RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=6',
+    })
+    expect(calls[0].body.recurrence[0]).toContain('COUNT=6')
+  })
+
+  it('supports UNTIL-based recurrence', async () => {
+    const calls = captureFetch([makeRawEvent()])
+    await createEvent(TOKEN, {
+      title: 'Daily check-in',
+      start: '2026-05-25T09:00:00Z',
+      end:   '2026-05-25T09:15:00Z',
+      recurrence: 'RRULE:FREQ=DAILY;UNTIL=20261231',
+    })
+    expect(calls[0].body.recurrence[0]).toContain('UNTIL=20261231')
+  })
+
+  it('supports monthly recurrence', async () => {
+    const calls = captureFetch([makeRawEvent()])
+    await createEvent(TOKEN, {
+      title: 'Monthly review',
+      start: '2026-05-01T10:00:00Z',
+      end:   '2026-05-01T11:00:00Z',
+      recurrence: 'RRULE:FREQ=MONTHLY;BYMONTHDAY=1',
+    })
+    expect(calls[0].body.recurrence[0]).toContain('FREQ=MONTHLY')
+  })
+
+  it('returns a parsed event after creating a recurring one', async () => {
+    mockFetch(makeRawEvent({ id: 'recurring-evt', summary: 'Standup' }))
+    const event = await createEvent(TOKEN, {
+      title: 'Standup',
+      start: '2026-05-25T10:00:00Z',
+      end:   '2026-05-25T10:15:00Z',
+      recurrence: 'RRULE:FREQ=WEEKLY;BYDAY=MO',
+    })
+    expect(event.id).toBe('recurring-evt')
+    expect(event.title).toBe('Standup')
+  })
+})
+
+// ── modifyEvent: recurrence ───────────────────────────────────────────────────
+
+describe('modifyEvent: recurrence', () => {
+  function stubModify(existing, patchResponse) {
+    const patchCalls = []
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(existing) })
+      .mockImplementationOnce(async (url, opts) => {
+        patchCalls.push({ url, body: JSON.parse(opts.body), method: opts.method })
+        return { ok: true, status: 200, json: () => Promise.resolve(patchResponse ?? existing) }
+      })
+    )
+    return patchCalls
+  }
+
+  it('sends recurrence as a single-element array when updating the rule', async () => {
+    const calls = stubModify(makeRawEvent())
+    await modifyEvent(TOKEN, 'evt1', { recurrence: 'RRULE:FREQ=DAILY' })
+    expect(calls[0].body.recurrence).toEqual(['RRULE:FREQ=DAILY'])
+  })
+
+  it('sends an empty array to clear recurrence when passed an empty string', async () => {
+    const calls = stubModify(makeRawEvent())
+    await modifyEvent(TOKEN, 'evt1', { recurrence: '' })
+    expect(calls[0].body.recurrence).toEqual([])
+  })
+
+  it('does not include recurrence in the PATCH when not provided', async () => {
+    const calls = stubModify(makeRawEvent())
+    await modifyEvent(TOKEN, 'evt1', { title: 'Renamed' })
+    expect(calls[0].body.recurrence).toBeUndefined()
+  })
+
+  it('can change recurrence pattern without touching title or time', async () => {
+    const calls = stubModify(makeRawEvent())
+    await modifyEvent(TOKEN, 'evt1', { recurrence: 'RRULE:FREQ=WEEKLY;BYDAY=TU,TH' })
+    expect(calls[0].body.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=TU,TH'])
+    expect(calls[0].body.summary).toBeUndefined()
+    expect(calls[0].body.start).toBeUndefined()
+  })
+
+  it('can update recurrence and title in the same call', async () => {
+    const calls = stubModify(makeRawEvent())
+    await modifyEvent(TOKEN, 'evt1', { title: 'New Name', recurrence: 'RRULE:FREQ=MONTHLY' })
+    expect(calls[0].body.summary).toBe('New Name')
+    expect(calls[0].body.recurrence).toEqual(['RRULE:FREQ=MONTHLY'])
+  })
+
+  it('preserves existing metadata when only recurrence changes', async () => {
+    const existing = makeRawEvent({
+      description: 'Notes\n\n<!--schedule-assistant\n{"priority":2,"dueDate":"2026-06-01"}\n-->',
+    })
+    const calls = stubModify(existing)
+    await modifyEvent(TOKEN, 'evt1', { recurrence: 'RRULE:FREQ=WEEKLY' })
+    expect(calls[0].body.description).toBeUndefined()
+    expect(calls[0].body.recurrence).toEqual(['RRULE:FREQ=WEEKLY'])
+  })
+})

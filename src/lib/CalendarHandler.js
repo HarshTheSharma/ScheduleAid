@@ -156,6 +156,7 @@ export async function createEvent(accessToken, {
   description = '',
   metadata = {},
   isAllDay = false,
+  recurrence,
 }) {
   const timeFields = isAllDay
     ? { start: { date: start }, end: { date: end } }
@@ -165,6 +166,7 @@ export async function createEvent(accessToken, {
     summary: title,
     description: encodeDescription(description, metadata),
     ...timeFields,
+    ...(recurrence && { recurrence: [recurrence] }),
   })
   return parseEvent(raw)
 }
@@ -192,6 +194,10 @@ export async function modifyEvent(accessToken, eventId, updates) {
   if (updates.end !== undefined) {
     const allDay = updates.isAllDay ?? current.isAllDay
     patch.end = allDay ? { date: updates.end } : { dateTime: updates.end }
+  }
+
+  if (updates.recurrence !== undefined) {
+    patch.recurrence = updates.recurrence ? [updates.recurrence] : []
   }
 
   const raw = await request('PATCH', `/calendars/primary/events/${eventId}`, accessToken, patch)
