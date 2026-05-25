@@ -50,10 +50,15 @@ function nowLineY() {
 
 const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, i) => DAY_START + i)
 
-export default function CalendarView({ refreshCount, highlightEventId }) {
+export default function CalendarView({ refreshCount, highlightEventId, focusDate }) {
   const { accessToken } = useAuth()
   const [weekStart, setWeekStart] = useState(startOfWeek)
   const [events,    setEvents]    = useState([])
+
+  useEffect(() => {
+    if (!focusDate) return
+    setWeekStart(startOfWeek(focusDate))
+  }, [focusDate])
   const bodyRef = useRef(null)
   const nowRef  = useRef(null)
 

@@ -35,7 +35,8 @@ function parseEvent(raw) {
     isAllDay: !raw.start?.dateTime,
     description: text,
     metadata,
-    ...(raw.recurringEventId && { recurringEventId: raw.recurringEventId }),
+    ...(raw.recurrence        && { recurrence: raw.recurrence }),
+    ...(raw.recurringEventId  && { recurringEventId: raw.recurringEventId }),
     raw,
   }
 }
@@ -149,6 +150,12 @@ export async function findConflicts(accessToken, { start, end, excludeEventId } 
 
 // ── Write ─────────────────────────────────────────────────────────────────────
 
+function stripOffset(iso) {
+  // Convert "2026-05-26T18:00:00-07:00" or "2026-05-26T18:00:00Z" to "2026-05-26T18:00:00"
+  // Google Calendar docs show local datetime + separate timeZone field for recurring events
+  return iso?.replace(/([+-]\d{2}:\d{2}|Z)$/, '') ?? iso
+}
+
 export async function createEvent(accessToken, {
   title,
   start,
@@ -158,9 +165,13 @@ export async function createEvent(accessToken, {
   isAllDay = false,
   recurrence,
 }) {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
   const timeFields = isAllDay
     ? { start: { date: start }, end: { date: end } }
-    : { start: { dateTime: start }, end: { dateTime: end } }
+    : {
+        start: { dateTime: stripOffset(start), timeZone: tz },
+        end:   { dateTime: stripOffset(end),   timeZone: tz },
+      }
 
   const raw = await request('POST', '/calendars/primary/events', accessToken, {
     summary: title,
@@ -168,7 +179,11 @@ export async function createEvent(accessToken, {
     ...timeFields,
     ...(recurrence && { recurrence: [recurrence] }),
   })
-  return parseEvent(raw)
+  const parsed = parseEvent(raw)
+  if (recurrence && !parsed.recurrence?.length) {
+    throw new Error('Google Calendar accepted the event but did not store the recurrence rule. Please try again.')
+  }
+  return parsed
 }
 
 // metadata is deep-merged so a partial update (e.g. priority only) doesn't wipe dueDate or flexibility

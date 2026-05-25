@@ -340,8 +340,8 @@ describe('createEvent', () => {
       end: '2026-05-21T11:00:00Z',
     })
     expect(calls[0].body.summary).toBe('Meeting')
-    expect(calls[0].body.start.dateTime).toBe('2026-05-21T10:00:00Z')
-    expect(calls[0].body.end.dateTime).toBe('2026-05-21T11:00:00Z')
+    expect(calls[0].body.start.dateTime).toBe('2026-05-21T10:00:00')
+    expect(calls[0].body.end.dateTime).toBe('2026-05-21T11:00:00')
   })
 
   it('uses date (not dateTime) fields for all-day events', async () => {
@@ -625,14 +625,15 @@ describe('deleteEvent: recurring', () => {
 
 describe('createEvent: recurrence', () => {
   it('sends recurrence as a single-element array when provided', async () => {
-    const calls = captureFetch([makeRawEvent()])
+    const rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'
+    const calls = captureFetch([makeRawEvent({ recurrence: [rrule] })])
     await createEvent(TOKEN, {
       title: 'Standup',
       start: '2026-05-25T10:00:00Z',
       end:   '2026-05-25T10:15:00Z',
-      recurrence: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+      recurrence: rrule,
     })
-    expect(calls[0].body.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'])
+    expect(calls[0].body.recurrence).toEqual([rrule])
   })
 
   it('omits the recurrence field entirely when not provided', async () => {
@@ -646,48 +647,62 @@ describe('createEvent: recurrence', () => {
   })
 
   it('supports COUNT-based recurrence', async () => {
-    const calls = captureFetch([makeRawEvent()])
+    const rrule = 'RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=6'
+    const calls = captureFetch([makeRawEvent({ recurrence: [rrule] })])
     await createEvent(TOKEN, {
       title: 'Sprint retro',
       start: '2026-05-25T14:00:00Z',
       end:   '2026-05-25T15:00:00Z',
-      recurrence: 'RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=6',
+      recurrence: rrule,
     })
     expect(calls[0].body.recurrence[0]).toContain('COUNT=6')
   })
 
   it('supports UNTIL-based recurrence', async () => {
-    const calls = captureFetch([makeRawEvent()])
+    const rrule = 'RRULE:FREQ=DAILY;UNTIL=20261231'
+    const calls = captureFetch([makeRawEvent({ recurrence: [rrule] })])
     await createEvent(TOKEN, {
       title: 'Daily check-in',
       start: '2026-05-25T09:00:00Z',
       end:   '2026-05-25T09:15:00Z',
-      recurrence: 'RRULE:FREQ=DAILY;UNTIL=20261231',
+      recurrence: rrule,
     })
     expect(calls[0].body.recurrence[0]).toContain('UNTIL=20261231')
   })
 
   it('supports monthly recurrence', async () => {
-    const calls = captureFetch([makeRawEvent()])
+    const rrule = 'RRULE:FREQ=MONTHLY;BYMONTHDAY=1'
+    const calls = captureFetch([makeRawEvent({ recurrence: [rrule] })])
     await createEvent(TOKEN, {
       title: 'Monthly review',
       start: '2026-05-01T10:00:00Z',
       end:   '2026-05-01T11:00:00Z',
-      recurrence: 'RRULE:FREQ=MONTHLY;BYMONTHDAY=1',
+      recurrence: rrule,
     })
     expect(calls[0].body.recurrence[0]).toContain('FREQ=MONTHLY')
   })
 
   it('returns a parsed event after creating a recurring one', async () => {
-    mockFetch(makeRawEvent({ id: 'recurring-evt', summary: 'Standup' }))
+    const rrule = 'RRULE:FREQ=WEEKLY;BYDAY=MO'
+    mockFetch(makeRawEvent({ id: 'recurring-evt', summary: 'Standup', recurrence: [rrule] }))
     const event = await createEvent(TOKEN, {
       title: 'Standup',
       start: '2026-05-25T10:00:00Z',
       end:   '2026-05-25T10:15:00Z',
-      recurrence: 'RRULE:FREQ=WEEKLY;BYDAY=MO',
+      recurrence: rrule,
     })
     expect(event.id).toBe('recurring-evt')
     expect(event.title).toBe('Standup')
+  })
+
+  it('throws if the API response is missing the recurrence field', async () => {
+    mockFetch(makeRawEvent())
+    await expect(createEvent(TOKEN, {
+      title: 'Standup',
+      start: '2026-05-25T10:00:00Z',
+      end:   '2026-05-25T10:15:00Z',
+      recurrence: 'RRULE:FREQ=WEEKLY;BYDAY=MO',
+    })).rejects.toThrow('did not store the recurrence rule')
   })
 })
 

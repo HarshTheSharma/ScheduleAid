@@ -18,7 +18,9 @@ const PROGRESS_LABELS = {
 
 function formatTime(iso) {
   if (!iso) return null
-  return new Date(iso).toLocaleString('en-US', {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  return d.toLocaleString('en-US', {
     weekday: 'short', month: 'short', day: 'numeric',
     hour: 'numeric', minute: '2-digit',
   })
@@ -32,7 +34,7 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function ActionCard({ name, args, eventDetails, onConfirm, onCancel }) {
+function ActionRow({ name, args, eventDetails }) {
   const resolvedTitle = args.title ?? eventDetails?.title ?? 'event'
 
   const labels = {
@@ -42,26 +44,27 @@ function ActionCard({ name, args, eventDetails, onConfirm, onCancel }) {
     delete_event:     `Delete "${resolvedTitle}"`,
   }
 
+  const fmtRange = (a, b) => {
+    const fa = formatTime(a), fb = formatTime(b)
+    if (fa && fb) return `${fa} → ${fb}`
+    return fa ?? fb ?? null
+  }
+
   let timeInfo = null
   if (name === 'reschedule_event') {
     const currentStart = eventDetails?.start
     const newStart = args.newStart
     if (currentStart && newStart) {
-      timeInfo = `${formatTime(currentStart)} → ${formatTime(newStart)}`
+      timeInfo = fmtRange(currentStart, newStart)
     } else if (newStart) {
-      timeInfo = `Moving to: ${formatTime(newStart)}`
+      const t = formatTime(newStart)
+      timeInfo = t ? `Moving to: ${t}` : null
     }
   } else if (name === 'delete_event' && eventDetails?.start) {
-    timeInfo = eventDetails.end
-      ? `${formatTime(eventDetails.start)} → ${formatTime(eventDetails.end)}`
-      : formatTime(eventDetails.start)
+    timeInfo = fmtRange(eventDetails.start, eventDetails.end)
   } else {
     const start = args.start ?? args.newStart
-    if (start) {
-      timeInfo = args.end
-        ? `${formatTime(start)} → ${formatTime(args.end)}`
-        : formatTime(start)
-    }
+    if (start) timeInfo = fmtRange(start, args.end)
   }
 
   const meta = eventDetails?.metadata ?? {}
@@ -71,6 +74,7 @@ function ActionCard({ name, args, eventDetails, onConfirm, onCancel }) {
       : (name === 'delete_event' || name === 'reschedule_event') && eventDetails?.description
         ? { label: 'Description', value: eventDetails.description }
         : null,
+    args.recurrence && { label: 'Recurrence', value: args.recurrence },
     args.priority !== undefined
       ? { label: 'Priority', value: PRIORITY_LABELS[args.priority] ?? args.priority }
       : meta.priority !== undefined
@@ -91,7 +95,7 @@ function ActionCard({ name, args, eventDetails, onConfirm, onCancel }) {
   ].filter(Boolean)
 
   return (
-    <div className="action-card">
+    <div className="action-card__row">
       <p className="action-card__label">{labels[name]}</p>
       {timeInfo && <p className="action-card__time">{timeInfo}</p>}
       {details.length > 0 && (
@@ -104,9 +108,21 @@ function ActionCard({ name, args, eventDetails, onConfirm, onCancel }) {
           ))}
         </dl>
       )}
+    </div>
+  )
+}
+
+function ActionCard({ actions, eventDetails, onConfirm, onCancel }) {
+  return (
+    <div className="action-card">
+      {actions.map((action, i) => (
+        <ActionRow key={i} name={action.name} args={action.args} eventDetails={i === 0 ? eventDetails : null} />
+      ))}
       <div className="action-card__buttons">
-        <button className="action-card__confirm" onClick={onConfirm}>Confirm</button>
-        <button className="action-card__cancel"  onClick={onCancel}>Cancel</button>
+        <button className="action-card__confirm" onClick={onConfirm}>
+          {actions.length > 1 ? `Confirm all (${actions.length})` : 'Confirm'}
+        </button>
+        <button className="action-card__cancel" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   )
@@ -133,13 +149,14 @@ function ProgressIndicator({ text }) {
 
 export default function MessageView({ apiKey, onEventsChanged, onPendingEvent }) {
   const { accessToken } = useAuth()
-  const [messages,           setMessages]           = useState([])
-  const [history,            setHistory]            = useState([])
-  const [input,              setInput]              = useState('')
-  const [isLoading,          setIsLoading]          = useState(false)
-  const [progressText,       setProgressText]       = useState(null)
-  const [pendingAction,      setPendingAction]      = useState(null)
+  const [messages,            setMessages]            = useState([])
+  const [history,             setHistory]             = useState([])
+  const [input,               setInput]               = useState('')
+  const [isLoading,           setIsLoading]           = useState(false)
+  const [progressText,        setProgressText]        = useState(null)
+  const [pendingAction,       setPendingAction]       = useState(null)
   const [pendingEventDetails, setPendingEventDetails] = useState(null)
+  const [pendingQuestion,     setPendingQuestion]     = useState(null)
   const bottomRef  = useRef(null)
   const textareaRef = useRef(null)
 
@@ -169,7 +186,7 @@ export default function MessageView({ apiKey, onEventsChanged, onPendingEvent })
   }, [accessToken])
 
   useEffect(() => {
-    const eventId = pendingAction?.args?.eventId ?? null
+    const eventId = pendingAction?.actions?.[0]?.args?.eventId ?? null
     onPendingEvent?.(eventId)
     if (!eventId || !accessToken) { setPendingEventDetails(null); return }
     getEvent(accessToken, eventId)
@@ -179,13 +196,22 @@ export default function MessageView({ apiKey, onEventsChanged, onPendingEvent })
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, progressText, pendingAction])
+  }, [messages, progressText, pendingAction, pendingQuestion])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || isLoading) return
+    if (!text) return
 
     setInput('')
+
+    if (pendingQuestion) {
+      setMessages(prev => [...prev, { role: 'user', text }])
+      pendingQuestion.answer(text)
+      setPendingQuestion(null)
+      return
+    }
+
+    if (isLoading) return
     setMessages(prev => [...prev, { role: 'user', text }])
     setIsLoading(true)
 
@@ -197,9 +223,17 @@ export default function MessageView({ apiKey, onEventsChanged, onPendingEvent })
         text,
         {
           onProgress: ({ tool }) => setProgressText(PROGRESS_LABELS[tool] ?? 'Working…'),
-          onPendingAction: ({ name, args, confirm }) => {
+          onPendingAction: ({ actions, confirm }) => {
             setProgressText(null)
-            setPendingAction({ name, args, confirm })
+            setPendingAction({ actions, confirm })
+          },
+          onAskUser: ({ question, answer }) => {
+            setProgressText(null)
+            setMessages(prev => [...prev, { role: 'assistant', text: question }])
+            setPendingQuestion({ answer })
+          },
+          onWriteError: ({ name, error }) => {
+            setMessages(prev => [...prev, { role: 'assistant', text: `⚠️ ${name} failed: ${error}` }])
           },
           onEventsChanged,
         }
@@ -216,8 +250,9 @@ export default function MessageView({ apiKey, onEventsChanged, onPendingEvent })
       setIsLoading(false)
       setProgressText(null)
       setPendingAction(null)
+      setPendingQuestion(null)
     }
-  }, [input, isLoading, apiKey, accessToken, history, onEventsChanged])
+  }, [input, isLoading, pendingQuestion, apiKey, accessToken, history, onEventsChanged])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -245,8 +280,7 @@ export default function MessageView({ apiKey, onEventsChanged, onPendingEvent })
 
         {pendingAction && (
           <ActionCard
-            name={pendingAction.name}
-            args={pendingAction.args}
+            actions={pendingAction.actions}
             eventDetails={pendingEventDetails}
             onConfirm={() => { pendingAction.confirm(true);  setPendingAction(null) }}
             onCancel={() =>  { pendingAction.confirm(false); setPendingAction(null) }}
@@ -268,13 +302,13 @@ export default function MessageView({ apiKey, onEventsChanged, onPendingEvent })
           onChange={handleInput}
           onKeyDown={handleKeyDown}
           placeholder="Ask anything about your schedule…"
-          disabled={isLoading}
+          disabled={isLoading && !pendingQuestion}
           rows={1}
         />
         <button
           className="command-bar__send"
           onClick={handleSend}
-          disabled={isLoading || !input.trim()}
+          disabled={(isLoading && !pendingQuestion) || !input.trim()}
           aria-label="Send"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">

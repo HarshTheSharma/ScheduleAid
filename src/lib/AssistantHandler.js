@@ -47,7 +47,7 @@ Read tools (get_events, get_events_for_day, find_free_slots, find_conflicts, sea
 Write tools (create_event, modify_event, delete_event) require user confirmation; the system will pause and ask before executing.
 
 ## How to work
-- Never assume a slot is free. Always check with find_conflicts or find_free_slots first.
+- Never assume a slot is free. Always check with find_conflicts or find_free_slots first. Exception: for recurring events, issue a single find_conflicts call spanning the current week only (Monday 00:00 to Sunday 23:59), then mention in your reply that conflicts may occur in future occurrences.
 - Always find the event with get_events or search_events before modifying or deleting it.
 - When moving or rescheduling an event, ALWAYS use reschedule_event. Never create_event + delete_event, and never modify_event just to change the time. reschedule_event preserves duration automatically.
 - When moving an event, preserve its original duration unless told otherwise.
@@ -69,9 +69,10 @@ Your reply to the user should only ever be the final outcome. Never include your
 ## Recurring events
 When an event has a recurringEventId field, it is one instance of a repeating series.
 
-Creating recurring events: use the recurrence parameter with a valid RRULE string.
+Creating recurring events: call create_event exactly once with the recurrence parameter — this single call creates the whole series. Never call create_event more than once for a recurring series.
 Common patterns:
 - Daily: RRULE:FREQ=DAILY
+- Every weekday (Mon–Fri): RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
 - Weekly on specific days: RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR
 - Every two weeks: RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO
 - Monthly on a date: RRULE:FREQ=MONTHLY;BYMONTHDAY=15
@@ -158,7 +159,7 @@ const TOOLS = [{
     },
     {
       name: 'create_event',
-      description: 'Create a new calendar event. Only call this after confirming the slot is free and the user has agreed to the time.',
+      description: 'Create a new calendar event. Only call this after confirming the slot is free and the user has agreed to the time. For recurring events, call this ONCE with the recurrence parameter — a single call creates the entire series.',
       parameters: {
         type: 'OBJECT',
         properties: {
@@ -219,6 +220,17 @@ const TOOLS = [{
           scope:   { type: 'STRING', description: '"this" (default) = only this occurrence, "following" = this and all future occurrences, "all" = the entire recurring series' },
         },
         required: ['eventId'],
+      },
+    },
+    {
+      name: 'ask_user',
+      description: 'Ask the user a single clarifying question when you genuinely cannot proceed without their input. Use sparingly — only when the information cannot be inferred from the calendar or context.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          question: { type: 'STRING', description: 'The clarifying question to ask the user.' },
+        },
+        required: ['question'],
       },
     },
   ],
@@ -323,11 +335,22 @@ async function callApi(apiKey, contents) {
 
 // ── Public interface ──────────────────────────────────────────────────────────
 
-export async function sendMessage(apiKey, accessToken, history, userMessage, { onPendingAction, onProgress, onEventsChanged } = {}) {
+function writeKey(name, args) {
+  if (name === 'create_event')     return args.recurrence
+    ? `create:${args.title}`                             // recurring — dedupe by title only
+    : `create:${args.title}:${args.start}`               // one-off — dedupe by title + time
+  if (name === 'modify_event')     return `modify:${args.eventId}`
+  if (name === 'reschedule_event') return `reschedule:${args.eventId}:${args.newStart}`
+  if (name === 'delete_event')     return `delete:${args.eventId}:${args.scope ?? 'this'}`
+  return name
+}
+
+export async function sendMessage(apiKey, accessToken, history, userMessage, { onPendingAction, onProgress, onEventsChanged, onAskUser, onWriteError } = {}) {
   const contents = [
     ...history,
     { role: 'user', parts: [{ text: userMessage }] },
   ]
+  const completedWrites = new Set()
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -346,33 +369,66 @@ export async function sendMessage(apiKey, accessToken, history, userMessage, { o
     contents.push({ role: 'model', parts })
 
     const toolResults = []
+
+    // Filter out write calls already completed this session before asking for confirmation
+    const pendingWriteCalls = toolCalls.filter(p => {
+      if (!WRITE_TOOLS.has(p.functionCall.name)) return false
+      return !completedWrites.has(writeKey(p.functionCall.name, p.functionCall.args))
+    })
+
+    let writesCancelled = false
+    if (pendingWriteCalls.length > 0) {
+      const actions = pendingWriteCalls.map(p => ({ name: p.functionCall.name, args: p.functionCall.args }))
+      const confirmed = await new Promise(resolve => {
+        onPendingAction?.({ actions, confirm: resolve })
+      })
+      if (!confirmed) {
+        writesCancelled = true
+        for (const { name } of actions) {
+          toolResults.push({
+            functionResponse: { name, response: { cancelled: true, message: 'User cancelled this action.' } },
+          })
+        }
+      }
+    }
+
     for (const part of toolCalls) {
       const { name, args } = part.functionCall
-
       onProgress?.({ tool: name, args })
 
       if (WRITE_TOOLS.has(name)) {
-        const confirmed = await new Promise(resolve => {
-          onPendingAction?.({ name, args, confirm: resolve })
-        })
-        if (!confirmed) {
+        const key = writeKey(name, args)
+        if (completedWrites.has(key)) {
           toolResults.push({
-            functionResponse: {
-              name,
-              response: { cancelled: true, message: 'User cancelled this action.' },
-            },
+            functionResponse: { name, response: { result: 'Already completed.', skipped: true } },
           })
           continue
         }
+        if (writesCancelled) continue
+      }
+
+      if (name === 'ask_user') {
+        const answer = await new Promise(resolve => {
+          onAskUser?.({ question: args.question, answer: resolve })
+        })
+        toolResults.push({
+          functionResponse: { name, response: { answer: answer ?? '' } },
+        })
+        continue
       }
 
       try {
         const result = await executeTool(name, args, accessToken)
+        if (WRITE_TOOLS.has(name)) {
+          completedWrites.add(writeKey(name, args))
+          onEventsChanged?.(args.start ?? args.newStart ?? null)
+        }
         toolResults.push({
           functionResponse: { name, response: { result } },
         })
-        if (WRITE_TOOLS.has(name)) onEventsChanged?.()
       } catch (err) {
+        console.error('[Tool error]', name, err.message)
+        if (WRITE_TOOLS.has(name)) onWriteError?.({ name, args, error: err.message })
         toolResults.push({
           functionResponse: { name, response: { error: err.message } },
         })

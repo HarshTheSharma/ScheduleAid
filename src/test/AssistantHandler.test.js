@@ -184,8 +184,9 @@ describe('sendMessage: write tool confirmation', () => {
     await sendMessage(API_KEY, ACCESS_TOKEN, [],'Add a stand-up', { onPendingAction })
 
     expect(onPendingAction).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'create_event',
-      args: expect.objectContaining({ title: 'Stand-up' }),
+      actions: expect.arrayContaining([
+        expect.objectContaining({ name: 'create_event', args: expect.objectContaining({ title: 'Stand-up' }) }),
+      ]),
       confirm: expect.any(Function),
     }))
   })

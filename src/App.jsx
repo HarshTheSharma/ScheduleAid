@@ -117,6 +117,7 @@ function SettingsMenu({ onSaveKey }) {
 function MainApp({ apiKey, onSaveKey, onClearApiKey }) {
   const { logout } = useAuth()
   const [refreshCount,     setRefreshCount]     = useState(0)
+  const [calendarFocus,    setCalendarFocus]    = useState(null)
   const [mobileView,       setMobileView]       = useState('chat') // 'chat' | 'calendar'
   const [highlightEventId, setHighlightEventId] = useState(null)
 
@@ -125,8 +126,12 @@ function MainApp({ apiKey, onSaveKey, onClearApiKey }) {
     onClearApiKey()
   }
 
-  const handleEventsChanged = useCallback(() => {
+  const handleEventsChanged = useCallback((eventStart) => {
     setRefreshCount(c => c + 1)
+    if (eventStart) {
+      const d = new Date(eventStart)
+      if (!isNaN(d.getTime())) setCalendarFocus(d)
+    }
   }, [])
 
   return (
@@ -161,7 +166,7 @@ function MainApp({ apiKey, onSaveKey, onClearApiKey }) {
       </header>
       <div className="app-body">
         <div className={`app-body__calendar${mobileView === 'calendar' ? ' app-body__calendar--active' : ''}`}>
-          <CalendarView refreshCount={refreshCount} highlightEventId={highlightEventId} />
+          <CalendarView refreshCount={refreshCount} highlightEventId={highlightEventId} focusDate={calendarFocus} />
         </div>
         <div className={`app-body__chat${mobileView === 'chat' ? ' app-body__chat--active' : ''}`}>
           <MessageView apiKey={apiKey} onEventsChanged={handleEventsChanged} onPendingEvent={setHighlightEventId} />
